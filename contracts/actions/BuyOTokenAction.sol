@@ -9,6 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {IAction} from "../interfaces/IAction.sol";
 import {IController} from "../interfaces/IController.sol";
 import {ICurveZap} from "../interfaces/ICurveZap.sol";
+import {ICurve} from "../interfaces/ICurve.sol";
 import {IOracle} from "../interfaces/IOracle.sol";
 import {IOToken} from "../interfaces/IOToken.sol";
 import {IStakeDao} from "../interfaces/IStakeDao.sol";
@@ -47,6 +48,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     IOracle public oracle;
     IStakeDao public stakedaoStrategy;
     IERC20 wantedAsset;
+    ICurve curve;
 
     event BuyOToken();
 
@@ -71,6 +73,8 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         oracle = IOracle(controller.oracle());
         stakedaoStrategy = IStakeDao(_sdTokenAddress);
         curveLPToken = stakedaoStrategy.token();
+
+        curve = ICurve(_curveMetaZapAddress);
 
         // enable vault to take all the sdToken back and re-distribute.
         IERC20(_sdTokenAddress).safeApprove(_vault, uint256(-1));
@@ -183,7 +187,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // sdFrax3Crv -> curve LP token
         uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
         // curve LP token -> usd
-        uint256 curvePrice = curveMetaZap.get_virtual_price();
+        uint256 curvePrice = curve.get_virtual_price();
         // multiply by exchange rate of curve lp token and usd
         return pricePerShare.mul(curvePrice).div(1e18);
     }
