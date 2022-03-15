@@ -138,11 +138,24 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         require(_order.sender.wallet == address(this), "S3");
         require(_order.signer.token == otoken, "S4");
 
+        // get sdtoken balance
+        uint256 sdTokenBalance = stakedaoStrategy.balanceOf(address(this));
+        // get new exchange rate
+        uint256 newExchangeRate = _getCurrentExchangeRate();
+        // usdc balance with last week's exchange rate
+        uint256 lastUsdcBalance = sdTokenBalance.div(lastExchangeRate);
+        // usdc balance with this week's exchange rate
+        uint256 newUsdcBalance = sdTokenBalance.div(newExchangeRate);
+        // usdc yield accrued
+        uint256 usdcYield = newUsdcBalance - lastUsdcBalance;
+        // sdToken yield accrued
+        uint256 sdYieldToWithdraw = usdcYield.mul(newExchangeRate);
+
         // withdraw usdc from stakedao / curve so we can buy options
-        _withdrawYield();
+        _withdrawYield(sdYieldToWithdraw);
 
         // buy options via airswap order
-        IERC20(usdc).safeIncreaseAllowance(address(airswap), yieldAccrued);
+        IERC20(usdc).safeIncreaseAllowance(address(airswap), usdcYield);
         _fillAirswapOrder(_order);
 
         // update lastExchangeRate to this week's new exchange rate
@@ -207,19 +220,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     /**
      * @dev withdraw yield amount before buying option
      */
-    function _withdrawYield(uint256 yieldToWithdraw) internal {
-        // get sdtoken balance
-        uint256 sdTokenBalance = stakedaoStrategy.balanceOf(address(this));
-        // get new exchange rate
-        uint256 newExchangeRate = _getCurrentExchangeRate();
-        // usdc balance with last week's exchange rate
-        uint256 lastUsdcBalance = sdTokenBalance.div(lastExchangeRate);
-        // usdc balance with this week's exchange rate
-        uint256 newUsdcBalance = sdTokenBalance.div(newExchangeRate);
-        // usdc yield accrued
-        uint256 usdcYield = newUsdcBalance - lastUsdcBalance;
-        // sdToken yield accrued
-        uint256 sdYieldToWithdraw = usdcYield.mul(newExchangeRate);
+    function _withdrawYield(uint256 sdYieldToWithdraw) internal {
         // withdraw curveLPToken (sdFrax3Crv) from stakedao
         require(stakedaoStrategy.balanceOf(address(this)) >= sdYieldToWithdraw);
         stakedaoStrategy.withdraw(sdYieldToWithdraw);
