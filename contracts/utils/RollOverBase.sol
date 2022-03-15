@@ -28,6 +28,7 @@ import {IOToken} from "../interfaces/IOToken.sol";
 contract RollOverBase is Ownable {
     address public otoken;
     address public nextOToken;
+    address constant weth = 0xd0A1E359811322d97991E03f863a0C30C2cF029C;
 
     uint256 public constant MIN_COMMIT_PERIOD = 4 hours;
     uint256 public commitStateStart;
@@ -77,12 +78,7 @@ contract RollOverBase is Ownable {
         commitStateStart = block.timestamp;
 
         IOToken nextToken = IOToken(_nextOToken);
-        // Can override or replace this.
-        require(
-            nextToken.underlyingAsset(),
-            "0xd0a1e359811322d97991e03f863a0c30c2cf029c", // weth
-            "S8"
-        );
+        require(nextToken.underlyingAsset() == weth, "S8");
     }
 
     function _setActionIdle() internal {
