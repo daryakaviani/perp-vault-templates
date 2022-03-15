@@ -154,8 +154,8 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // withdraw usdc from stakedao / curve so we can buy options
         _withdrawYield(sdYieldToWithdraw);
 
-        // buy options via airswap order
-        IERC20(usdc).safeIncreaseAllowance(address(airswap), usdcYield);
+        // buy options via airswap order (wantedAsset is usdc)
+        IERC20(wantedAsset).safeIncreaseAllowance(address(airswap), usdcYield);
         _fillAirswapOrder(_order);
 
         // update lastExchangeRate to this week's new exchange rate
@@ -183,7 +183,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // sdFrax3Crv -> curve LP token
         uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
         // curve LP token -> usd
-        uint256 curvePrice = curve.get_virtual_price(); // 18 decimals
+        uint256 curvePrice = curveMetaZap.get_virtual_price();
         // multiply by exchange rate of curve lp token and usd
         return pricePerShare.mul(curvePrice).div(1e18);
     }
