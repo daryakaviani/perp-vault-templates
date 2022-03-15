@@ -138,22 +138,14 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         require(_order.sender.wallet == address(this), "S3");
         require(_order.signer.token == otoken, "S4");
 
-        // withdraw usdc from stakedao / curve
+        // withdraw usdc from stakedao / curve so we can buy options
         _withdrawYield();
 
-        // buy options on airswap with yield
-        // Does replacing safeIncreaseAllowance with safeDecreaseAllowance sufficiently allow us to buy options via airswap instead of selling them?
-        // How can we ensure these options we are buying are for ETH in particular?
-        // Confirm we do not do the IController actions here because we are not actually buying the options from the vault, but from AirSwap.
-        // Is it okay to not directly call order.sender.amount?
+        // buy options via airswap order
         IERC20(usdc).safeIncreaseAllowance(address(airswap), yieldAccrued);
         _fillAirswapOrder(_order);
 
-        // check that the amount of sdToken deducted does not exceed the yield accrued
-        // uint256 sdTokenBalanceAfter = stakedaoStrategy.balanceOf(address(this));
-        // uint256 sdTokenDeducted = sdTokenBalanceBefore.sub(sdTokenBalanceAfter);
-        // require(yieldAccrued >= sdTokenDeducted.mul(newExchangeRate), "S7");
-
+        // update lastExchangeRate to this week's new exchange rate
         lastExchangeRate = newExchangeRate;
 
         emit BuyOToken(sdTokenDeducted);
@@ -177,10 +169,9 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     function _getCurrentExchangeRate() internal {
         // sdFrax3Crv -> curve LP token
         uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
-
         // curve LP token -> usd
         uint256 curvePrice = curve.get_virtual_price(); // 18 decimals
-        // multiple by exchange rate of curve lp token and usd
+        // multiply by exchange rate of curve lp token and usd
         return pricePerShare.mul(curvePrice).div(1e18);
     }
 
