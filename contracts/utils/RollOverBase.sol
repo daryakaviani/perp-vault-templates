@@ -9,6 +9,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import {AirswapBase} from "./AirswapBase.sol";
 import {IWhitelist} from "../interfaces/IWhitelist.sol";
 import {SwapTypes} from "../libraries/SwapTypes.sol";
+import {IOToken} from "../interfaces/IOToken.sol";
 
 /**
  * Error Codes
