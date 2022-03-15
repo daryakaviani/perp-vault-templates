@@ -138,21 +138,8 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         require(_order.sender.wallet == address(this), "S3");
         require(_order.signer.token == otoken, "S4");
 
-        // get sdtoken balance before buying otokens
-        uint256 sdTokenBalanceBefore = stakedaoStrategy.balanceOf(
-            address(this)
-        );
-
-        // get new exchange rate
-        uint256 newExchangeRate = _getCurrentExchangeRate();
-
-        // TODO: decimal manipulation
-        uint256 yieldAccrued = sdTokenBalanceBefore.div(
-            newExchangeRate - lastExchangeRate
-        );
-
         // withdraw usdc from stakedao / curve
-        _withdrawYield(yieldAccrued);
+        _withdrawYield();
 
         // buy options on airswap with yield
         // Does replacing safeIncreaseAllowance with safeDecreaseAllowance sufficiently allow us to buy options via airswap instead of selling them?
@@ -230,11 +217,22 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
      * @dev withdraw yield amount before buying option
      */
     function _withdrawYield(uint256 yieldToWithdraw) internal {
+        // get sdtoken balance
+        uint256 sdTokenBalance = stakedaoStrategy.balanceOf(address(this));
+        // get new exchange rate
+        uint256 newExchangeRate = _getCurrentExchangeRate();
+        // usdc balance with last week's exchange rate
+        uint256 lastUsdcBalance = sdTokenBalance.div(lastExchangeRate);
+        // usdc balance with this week's exchange rate
+        uint256 newUsdcBalance = sdTokenBalance.div(newExchangeRate);
+        // usdc yield accrued
+        uint256 usdcYield = newUsdcBalance - lastUsdcBalance;
+        // sdToken yield accrued
+        uint256 sdYieldToWithdraw = usdcYield.mul(newExchangeRate);
         // withdraw curveLPToken (sdFrax3Crv) from stakedao
-        uint256 sdYieldToWithdraw = _getCurrentExchangeRate() * yieldToWithdraw;
         require(stakedaoStrategy.balanceOf(address(this)) >= sdYieldToWithdraw);
         stakedaoStrategy.withdraw(sdYieldToWithdraw);
-        // What is the right remove_liquidity_one_coin index?
+        // TODO: determine correct curve pool index
         curveMetaZap.remove_liquidity_one_coin(
             address(curveLPToken),
             curveLPToken.balanceOf(address(this)),
