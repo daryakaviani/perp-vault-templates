@@ -136,7 +136,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     function buyOToken(SwapTypes.Order memory _order) external onlyOwner {
         onlyActivated();
         require(_order.sender.wallet == address(this), "S3");
-        require(_order.sender.token == otoken, "S4");
+        require(_order.signer.token == otoken, "S4");
 
         // get sdtoken balance before buying otokens
         uint256 sdTokenBalanceBefore = stakedaoStrategy.balanceOf(
@@ -159,13 +159,13 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // How can we ensure these options we are buying are for ETH in particular?
         // Confirm we do not do the IController actions here because we are not actually buying the options from the vault, but from AirSwap.
         // Is it okay to not directly call order.sender.amount?
-        IERC20(otoken).safeDecreaseAllowance(address(airswap), yieldAccrued);
+        IERC20(usdc).safeIncreaseAllowance(address(airswap), yieldAccrued);
         _fillAirswapOrder(_order);
 
         // check that the amount of sdToken deducted does not exceed the yield accrued
-        uint256 sdTokenBalanceAfter = stakedaoStrategy.balanceOf(address(this));
-        uint256 sdTokenDeducted = sdTokenBalanceBefore.sub(sdTokenBalanceAfter);
-        require(yieldAccrued >= sdTokenDeducted.mul(newExchangeRate), "S7");
+        // uint256 sdTokenBalanceAfter = stakedaoStrategy.balanceOf(address(this));
+        // uint256 sdTokenDeducted = sdTokenBalanceBefore.sub(sdTokenBalanceAfter);
+        // require(yieldAccrued >= sdTokenDeducted.mul(newExchangeRate), "S7");
 
         lastExchangeRate = newExchangeRate;
 
@@ -187,9 +187,14 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     /**
     @dev get current exchange rate (sdFrax3Crv-usd).
     */
-    // Best way to set up exchange rate?
     function _getCurrentExchangeRate() internal {
-        // TODO: oracle or calculation?
+        // sdFrax3Crv -> curve LP token
+        uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
+
+        // curve LP token -> usd
+        uint256 curvePrice = curve.get_virtual_price(); // 18 decimals
+        // multiple by exchange rate of curve lp token and usd
+        return pricePerShare.mul(curvePrice).div(1e18);
     }
 
     /**
@@ -229,13 +234,10 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         uint256 sdYieldToWithdraw = _getCurrentExchangeRate() * yieldToWithdraw;
         require(stakedaoStrategy.balanceOf(address(this)) >= sdYieldToWithdraw);
         stakedaoStrategy.withdraw(sdYieldToWithdraw);
-
-        // withdraw wanted asset (usdc) from curve
-        wantedAsset.approve(address(curveMetaZap), yieldToWithdraw);
         // What is the right remove_liquidity_one_coin index?
         curveMetaZap.remove_liquidity_one_coin(
             address(curveLPToken),
-            yieldToWithdraw,
+            curveLPToken.balanceOf(address(this)),
             0, // not sure if this is the right index
             0
         );
