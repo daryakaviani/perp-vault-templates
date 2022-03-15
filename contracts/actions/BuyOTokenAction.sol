@@ -179,7 +179,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     /**
     @dev get current exchange rate (sdFrax3Crv-usd).
     */
-    function _getCurrentExchangeRate() internal {
+    function _getCurrentExchangeRate() internal returns (uint256) {
         // sdFrax3Crv -> curve LP token
         uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
         // curve LP token -> usd
