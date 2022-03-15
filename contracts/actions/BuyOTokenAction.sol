@@ -48,7 +48,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     IStakeDao public stakedaoStrategy;
     IERC20 wantedAsset;
 
-    event BuyOToken(uint256 premium);
+    event BuyOToken();
 
     constructor(
         address _vault,
@@ -148,7 +148,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // update lastExchangeRate to this week's new exchange rate
         lastExchangeRate = newExchangeRate;
 
-        emit BuyOToken(sdTokenDeducted);
+        emit BuyOToken();
     }
 
     /**
