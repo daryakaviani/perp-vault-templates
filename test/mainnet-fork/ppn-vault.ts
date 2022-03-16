@@ -252,12 +252,8 @@ describe("Mainnet Fork Tests", function () {
     await provider.send("hardhat_impersonateAccount", [usdcWhale]);
     const signer = await ethers.provider.getSigner(usdcWhale);
     await usdc.connect(signer).transfer(depositor1.address, p1DepositAmount);
-    await frax3crv
-      .connect(signer)
-      .transfer(depositor2.address, p2DepositAmount);
-    await frax3crv
-      .connect(signer)
-      .transfer(depositor3.address, p3DepositAmount);
+    await usdc.connect(signer).transfer(depositor2.address, p2DepositAmount);
+    await usdc.connect(signer).transfer(depositor3.address, p3DepositAmount);
     await provider.send("evm_mine", []);
     await provider.send("hardhat_stopImpersonatingAccount", [usdcWhale]);
   });
@@ -417,44 +413,52 @@ describe("Mainnet Fork Tests", function () {
       );
     });
 
-    it("owner commits to the option", async () => {
-      expect(await action1.state()).to.be.equal(ActionState.Idle);
-      await action1.commitOToken(otoken.address);
-      expect(await action1.state()).to.be.equal(ActionState.Committed);
-    });
+    // it("owner commits to the option", async () => {
+    //   expect(await action1.state()).to.be.equal(ActionState.Idle);
+    //   await action1.commitOToken(otoken.address);
+    //   expect(await action1.state()).to.be.equal(ActionState.Committed);
+    // });
 
-    it("owner mints options with sdFrax3Crv as collateral and sells them", async () => {
+    it("owner buys options with usdc", async () => {
+      const exchangeRateBefore = await action1.getCurrentExchangeRate();
+
       // increase time
       const minPeriod = await action1.MIN_COMMIT_PERIOD();
       await provider.send("evm_increaseTime", [minPeriod.toNumber()]); // increase time
       await provider.send("evm_mine", []);
 
-      const vaultSdfrax3crvBalanceBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
-
       await vault.rollOver([(100 - reserveFactor) * 100]);
 
-      const expectedSdfrax3crvBalanceInVault = vaultSdfrax3crvBalanceBefore
-        .mul(reserveFactor)
-        .div(100);
+      // get current vault sdFrax3Crv balance
+      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+
+      const exchangeRateAfter = await action1.getCurrentExchangeRate();
+
+      // usdc balance with exchange rate before time passed
+      const usdcBalanceBefore = vaultSdfrax3crvBalance.div(exchangeRateBefore);
+
+      // usdc balance with exchange rate after time passed
+      const usdcBalanceAfter = vaultSdfrax3crvBalance.div(exchangeRateAfter);
+
+      // usdc yield accrued
+      const yieldAmount = usdcBalanceAfter.sub(usdcBalanceBefore);
+
+      // const expectedSdfrax3crvBalanceInVault = vaultSdfrax3crvBalanceBefore
+      //   .mul(reserveFactor)
+      //   .div(100);
       const collateralAmount = await sdFrax3Crv.balanceOf(action1.address);
-      // This assumes premium was paid in frax3crv. This is the lower bount
-      const premiumInfrax3crv = premium
-        .div(await frax3crv.get_virtual_price())
-        .mul(utils.parseEther("1.0"));
-      const premiumInSdfrax3crv = premiumInfrax3crv
-        .mul(await stakedaoSdfrax3crvStrategy.totalSupply())
-        .div(await stakedaoSdfrax3crvStrategy.balance());
-      const expectedTotal =
-        vaultSdfrax3crvBalanceBefore.add(premiumInSdfrax3crv);
-      const expectedSdfrax3crvBalanceInAction = vaultSdfrax3crvBalanceBefore
-        .sub(expectedSdfrax3crvBalanceInVault)
-        .add(premiumInSdfrax3crv);
-      const sellAmount = collateralAmount
-        .div(otokenStrikePrice)
-        .div(100)
-        .toString(); // needs to be in 1e8 units
+      //   // This assumes premium was paid in frax3crv. This is the lower bount
+      //   const premiumInfrax3crv = premium
+      //     .div(await frax3crv.get_virtual_price())
+      //     .mul(utils.parseEther("1.0"));
+      //   const premiumInSdfrax3crv = premiumInfrax3crv
+      //     .mul(await stakedaoSdfrax3crvStrategy.totalSupply())
+      //     .div(await stakedaoSdfrax3crvStrategy.balance());
+      //   const expectedTotal =
+      //     vaultSdfrax3crvBalanceBefore.add(premiumInSdfrax3crv);
+      //   const expectedSdfrax3crvBalanceInAction = vaultSdfrax3crvBalanceBefore
+      //     .sub(expectedSdfrax3crvBalanceInVault)
+      //     .add(premiumInSdfrax3crv);
 
       const marginPoolBalanceOfsdFrax3CrvBefore = await sdFrax3Crv.balanceOf(
         marginPoolAddess
@@ -465,7 +469,7 @@ describe("Mainnet Fork Tests", function () {
       const order = await getOrder(
         action1.address,
         otoken.address,
-        sellAmount,
+        yieldAmount.toString(), // this will be ignored
         counterpartyWallet.address,
         usdc.address,
         premiumToSend.toString(),
@@ -478,38 +482,32 @@ describe("Mainnet Fork Tests", function () {
         "collateral should not be locked"
       ).to.be.true;
 
-      await action1.mintAndSellOToken(collateralAmount, sellAmount, order);
+      // buy oToken
+      await action1.buyOToken(order);
 
-      const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+      //   const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
+      //     vault.address
+      //   );
 
-      // check sdFrax3Crv balance in action and vault
-      expect(vaultSdfrax3crvBalanceAfter).to.be.within(
-        expectedSdfrax3crvBalanceInVault.sub(1) as any,
-        expectedSdfrax3crvBalanceInVault.add(1) as any,
-        "incorrect balance in vault"
-      );
-
-      // expect((await vault.totalStakedaoAsset()).gte(expectedTotal), 'incorrect accounting in vault').to.be.true;
-      // expect((await sdFrax3Crv.balanceOf(action1.address)).gte(premiumInSdfrax3crv), 'incorrect sdFrax3Crv balance in action').to.be.true;
-      expect(
-        await (
-          await action1.currentValue()
-        ).gte(expectedSdfrax3crvBalanceInAction),
-        "incorrect current value in action"
-      ).to.be.true;
+      //   expect(
+      //     await (
+      //       await action1.currentValue()
+      //     ).gte(expectedSdfrax3crvBalanceInAction),
+      //     "incorrect current value in action"
+      //   ).to.be.true;
       expect(
         await action1.lockedAsset(),
         "incorrect accounting in action"
       ).to.be.equal(collateralAmount);
-      expect(await frax.balanceOf(action1.address)).to.be.equal("0");
+      expect(await usdc.balanceOf(action1.address)).to.be.equal(
+        usdcBalanceBefore
+      );
 
-      // check the otoken balance of counterparty
+      // check the otoken balance of the action increased by yield amount
       expect(
-        await otoken.balanceOf(counterpartyWallet.address),
-        "incorrect otoken balance sent to counterparty"
-      ).to.be.equal(sellAmount);
+        await otoken.balanceOf(action1.address),
+        "incorrect otoken balance obtained"
+      ).to.be.equal(yieldAmount);
 
       const marginPoolBalanceOfsdFrax3CrvAfter = await sdFrax3Crv.balanceOf(
         marginPoolAddess
@@ -522,578 +520,578 @@ describe("Mainnet Fork Tests", function () {
       ).to.be.equal(marginPoolBalanceOfsdFrax3CrvBefore.add(collateralAmount));
     });
 
-    it("p3 deposits FRAX3CRV", async () => {
-      // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
-      const amountfrax3crvDeposited = p3DepositAmount;
+    // it("p3 deposits FRAX3CRV", async () => {
+    //   // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
+    //   const amountfrax3crvDeposited = p3DepositAmount;
 
-      // multiplying by 10^10 to scale a 10^8 number to a 10^18 number
-      const sdfrax3crvSupplyBefore =
-        await stakedaoSdfrax3crvStrategy.totalSupply();
-      const frax3crvBalanceInStakedao =
-        await stakedaoSdfrax3crvStrategy.balance();
-      const sdFrax3crvDeposited = amountfrax3crvDeposited
-        .mul(sdfrax3crvSupplyBefore)
-        .div(frax3crvBalanceInStakedao);
+    //   // multiplying by 10^10 to scale a 10^8 number to a 10^18 number
+    //   const sdfrax3crvSupplyBefore =
+    //     await stakedaoSdfrax3crvStrategy.totalSupply();
+    //   const frax3crvBalanceInStakedao =
+    //     await stakedaoSdfrax3crvStrategy.balance();
+    //   const sdFrax3crvDeposited = amountfrax3crvDeposited
+    //     .mul(sdfrax3crvSupplyBefore)
+    //     .div(frax3crvBalanceInStakedao);
 
-      // keep track of balance before
-      const vaultTotalBefore = await vault.totalStakedaoAsset();
-      const sharesBefore = await vault.totalSupply();
-      const vaultSdfrax3crvBalanceBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   // keep track of balance before
+    //   const vaultTotalBefore = await vault.totalStakedaoAsset();
+    //   const sharesBefore = await vault.totalSupply();
+    //   const vaultSdfrax3crvBalanceBefore = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      // approve and deposit
-      await frax3crv
-        .connect(depositor3)
-        .approve(vault.address, amountfrax3crvDeposited);
-      await vault.connect(depositor3).depositCrvLP(amountfrax3crvDeposited);
+    //   // approve and deposit
+    //   await frax3crv
+    //     .connect(depositor3)
+    //     .approve(vault.address, amountfrax3crvDeposited);
+    //   await vault.connect(depositor3).depositCrvLP(amountfrax3crvDeposited);
 
-      const vaultTotal = await vault.totalStakedaoAsset();
-      const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   const vaultTotal = await vault.totalStakedaoAsset();
+    //   const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      // check the sdFrax3Crv token balances
-      expect(
-        vaultTotal.sub(vaultTotalBefore),
-        "internal accounting is incorrect"
-      ).to.be.eq(sdFrax3crvDeposited);
-      expect(
-        vaultSdfrax3crvBalanceAfter.sub(vaultSdfrax3crvBalanceBefore),
-        "internal balance is incorrect"
-      ).to.be.equal(sdFrax3crvDeposited);
+    //   // check the sdFrax3Crv token balances
+    //   expect(
+    //     vaultTotal.sub(vaultTotalBefore),
+    //     "internal accounting is incorrect"
+    //   ).to.be.eq(sdFrax3crvDeposited);
+    //   expect(
+    //     vaultSdfrax3crvBalanceAfter.sub(vaultSdfrax3crvBalanceBefore),
+    //     "internal balance is incorrect"
+    //   ).to.be.equal(sdFrax3crvDeposited);
 
-      // check the minted share balances
-      const sharesMinted = sdFrax3crvDeposited
-        .mul(sharesBefore)
-        .div(vaultTotalBefore);
-      expect(
-        await vault.balanceOf(depositor3.address),
-        "incorrcect amount of shares minted"
-      ).to.be.equal(sharesMinted);
-    });
+    //   // check the minted share balances
+    //   const sharesMinted = sdFrax3crvDeposited
+    //     .mul(sharesBefore)
+    //     .div(vaultTotalBefore);
+    //   expect(
+    //     await vault.balanceOf(depositor3.address),
+    //     "incorrcect amount of shares minted"
+    //   ).to.be.equal(sharesMinted);
+    // });
 
-    it("p1 withdraws FRAX3CRV", async () => {
-      // vault balance calculations
-      const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
-      const sharesBefore = await vault.totalSupply();
-      const sharesToWithdraw = await vault.balanceOf(depositor1.address);
+    // it("p1 withdraws FRAX3CRV", async () => {
+    //   // vault balance calculations
+    //   const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
+    //   const sharesBefore = await vault.totalSupply();
+    //   const sharesToWithdraw = await vault.balanceOf(depositor1.address);
 
-      // p1 balance calculations
-      const fee = sharesToWithdraw
-        .mul(vaultTotalSdfrax3crvBefore)
-        .div(sharesBefore)
-        .mul(5)
-        .div(1000);
-      const balanceOfP1Before = await frax3crv.balanceOf(depositor1.address);
+    //   // p1 balance calculations
+    //   const fee = sharesToWithdraw
+    //     .mul(vaultTotalSdfrax3crvBefore)
+    //     .div(sharesBefore)
+    //     .mul(5)
+    //     .div(1000);
+    //   const balanceOfP1Before = await frax3crv.balanceOf(depositor1.address);
 
-      // calculate sdFrax3Crv Balances after
-      const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore);
+    //   // calculate sdFrax3Crv Balances after
+    //   const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore);
 
-      // calculate crv3Frax balances after
-      const sdfrax3crvSupplyBefore =
-        await stakedaoSdfrax3crvStrategy.totalSupply();
-      const frax3crvBalanceInStakedao =
-        await stakedaoSdfrax3crvStrategy.balance();
-      const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore)
-        .mul(995)
-        .div(1000);
-      const crv3FraxToWithdraw = sdFrax3crvToWithdrawMinusFee
-        .mul(frax3crvBalanceInStakedao)
-        .div(sdfrax3crvSupplyBefore);
+    //   // calculate crv3Frax balances after
+    //   const sdfrax3crvSupplyBefore =
+    //     await stakedaoSdfrax3crvStrategy.totalSupply();
+    //   const frax3crvBalanceInStakedao =
+    //     await stakedaoSdfrax3crvStrategy.balance();
+    //   const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore)
+    //     .mul(995)
+    //     .div(1000);
+    //   const crv3FraxToWithdraw = sdFrax3crvToWithdrawMinusFee
+    //     .mul(frax3crvBalanceInStakedao)
+    //     .div(sdfrax3crvSupplyBefore);
 
-      // fee calculations
-      const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
+    //   // fee calculations
+    //   const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
 
-      await vault.connect(depositor1).withdrawCrvLp(sharesToWithdraw);
+    //   await vault.connect(depositor1).withdrawCrvLp(sharesToWithdraw);
 
-      // get vault balances after
-      const sharesAfter = await vault.totalSupply();
-      const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   // get vault balances after
+    //   const sharesAfter = await vault.totalSupply();
+    //   const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      // fee variables
-      const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
-      const balanceOfP1After = await frax3crv.balanceOf(depositor1.address);
+    //   // fee variables
+    //   const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
+    //   const balanceOfP1After = await frax3crv.balanceOf(depositor1.address);
 
-      expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
-        sharesAfter.add(sharesToWithdraw)
-      );
+    //   expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
+    //     sharesAfter.add(sharesToWithdraw)
+    //   );
 
-      // check vault balance
-      expect(
-        vaultSdFrax3CrvBalanceAfter,
-        "incorrect change in vault balance"
-      ).to.be.within(
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
-      );
-      expect(
-        vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
-        "incorrect change in vault total accounting"
-      ).to.be.eq(vaultTotalSdfrax3crvAfter);
+    //   // check vault balance
+    //   expect(
+    //     vaultSdFrax3CrvBalanceAfter,
+    //     "incorrect change in vault balance"
+    //   ).to.be.within(
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
+    //   );
+    //   expect(
+    //     vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
+    //     "incorrect change in vault total accounting"
+    //   ).to.be.eq(vaultTotalSdfrax3crvAfter);
 
-      // check p1 balance
-      expect(balanceOfP1After, "incorrect frax3crv transferred to p1").to.be.eq(
-        balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
-      );
-      expect(
-        balanceOfP1After.gt(p1DepositAmount),
-        "p1 should have made a profit"
-      ).to.be.true;
+    //   // check p1 balance
+    //   expect(balanceOfP1After, "incorrect frax3crv transferred to p1").to.be.eq(
+    //     balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
+    //   );
+    //   expect(
+    //     balanceOfP1After.gt(p1DepositAmount),
+    //     "p1 should have made a profit"
+    //   ).to.be.true;
 
-      // check fee
-      expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
-        balanceOfFeeRecipientBefore.add(fee)
-      );
-    });
+    //   // check fee
+    //   expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
+    //     balanceOfFeeRecipientBefore.add(fee)
+    //   );
+    // });
 
-    it("option expires", async () => {
-      // increase time
-      await provider.send("evm_setNextBlockTimestamp", [expiry + day]);
-      await provider.send("evm_mine", []);
+    // it("option expires", async () => {
+    //   // increase time
+    //   await provider.send("evm_setNextBlockTimestamp", [expiry + day]);
+    //   await provider.send("evm_mine", []);
 
-      // set settlement price
-      await wethPricer.setExpiryPriceInOracle(
-        weth.address,
-        expiry,
-        "3000000000000"
-      );
-      await sdFrax3CrvPricer.setExpiryPriceInOracle(expiry);
+    //   // set settlement price
+    //   await wethPricer.setExpiryPriceInOracle(
+    //     weth.address,
+    //     expiry,
+    //     "3000000000000"
+    //   );
+    //   await sdFrax3CrvPricer.setExpiryPriceInOracle(expiry);
 
-      // increase time
-      await provider.send("evm_increaseTime", [day]); // increase time
-      await provider.send("evm_mine", []);
+    //   // increase time
+    //   await provider.send("evm_increaseTime", [day]); // increase time
+    //   await provider.send("evm_mine", []);
 
-      const sdFrax3CrvControlledByActionBefore = await action1.currentValue();
-      const sdFrax3CrvBalanceInVaultBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   const sdFrax3CrvControlledByActionBefore = await action1.currentValue();
+    //   const sdFrax3CrvBalanceInVaultBefore = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      await vault.closePositions();
+    //   await vault.closePositions();
 
-      const sdFrax3CrvBalanceInVaultAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
-      const sdFrax3CrvBalanceInActionAfter = await sdFrax3Crv.balanceOf(
-        action1.address
-      );
-      const sdFrax3CrvControlledByActionAfter = await action1.currentValue();
-      const vaultTotal = await vault.totalStakedaoAsset();
+    //   const sdFrax3CrvBalanceInVaultAfter = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
+    //   const sdFrax3CrvBalanceInActionAfter = await sdFrax3Crv.balanceOf(
+    //     action1.address
+    //   );
+    //   const sdFrax3CrvControlledByActionAfter = await action1.currentValue();
+    //   const vaultTotal = await vault.totalStakedaoAsset();
 
-      // check vault balances
-      expect(vaultTotal, "incorrect accounting in vault").to.be.equal(
-        sdFrax3CrvBalanceInVaultAfter
-      );
-      expect(
-        sdFrax3CrvBalanceInVaultAfter,
-        "incorrect balances in vault"
-      ).to.be.equal(
-        sdFrax3CrvBalanceInVaultBefore.add(sdFrax3CrvControlledByActionBefore)
-      );
+    //   // check vault balances
+    //   expect(vaultTotal, "incorrect accounting in vault").to.be.equal(
+    //     sdFrax3CrvBalanceInVaultAfter
+    //   );
+    //   expect(
+    //     sdFrax3CrvBalanceInVaultAfter,
+    //     "incorrect balances in vault"
+    //   ).to.be.equal(
+    //     sdFrax3CrvBalanceInVaultBefore.add(sdFrax3CrvControlledByActionBefore)
+    //   );
 
-      // check action balances
-      expect(
-        (await action1.lockedAsset()).eq("0"),
-        "all collateral should be unlocked"
-      ).to.be.true;
-      expect(
-        sdFrax3CrvBalanceInActionAfter,
-        "no sdFrax3Crv should be left in action"
-      ).to.be.equal("0");
-      expect(
-        sdFrax3CrvControlledByActionAfter,
-        "no sdFrax3Crv should be controlled by action"
-      ).to.be.equal("0");
-    });
+    //   // check action balances
+    //   expect(
+    //     (await action1.lockedAsset()).eq("0"),
+    //     "all collateral should be unlocked"
+    //   ).to.be.true;
+    //   expect(
+    //     sdFrax3CrvBalanceInActionAfter,
+    //     "no sdFrax3Crv should be left in action"
+    //   ).to.be.equal("0");
+    //   expect(
+    //     sdFrax3CrvControlledByActionAfter,
+    //     "no sdFrax3Crv should be controlled by action"
+    //   ).to.be.equal("0");
+    // });
 
-    it("p2 withdraws FRAX3CRV", async () => {
-      // vault balance calculations
-      const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
-      const sharesBefore = await vault.totalSupply();
-      const sharesToWithdraw = await vault.balanceOf(depositor2.address);
+    // it("p2 withdraws FRAX3CRV", async () => {
+    //   // vault balance calculations
+    //   const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
+    //   const sharesBefore = await vault.totalSupply();
+    //   const sharesToWithdraw = await vault.balanceOf(depositor2.address);
 
-      // p2 balance calculations
-      const fee = sharesToWithdraw
-        .mul(vaultTotalSdfrax3crvBefore)
-        .div(sharesBefore)
-        .mul(5)
-        .div(1000);
-      const balanceOfP1Before = await frax3crv.balanceOf(depositor2.address);
+    //   // p2 balance calculations
+    //   const fee = sharesToWithdraw
+    //     .mul(vaultTotalSdfrax3crvBefore)
+    //     .div(sharesBefore)
+    //     .mul(5)
+    //     .div(1000);
+    //   const balanceOfP1Before = await frax3crv.balanceOf(depositor2.address);
 
-      // calculate sdFrax3Crv Balances after
-      const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore);
+    //   // calculate sdFrax3Crv Balances after
+    //   const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore);
 
-      // calculate crv3Frax balances after
-      const sdfrax3crvSupplyBefore =
-        await stakedaoSdfrax3crvStrategy.totalSupply();
-      const frax3crvBalanceInStakedao =
-        await stakedaoSdfrax3crvStrategy.balance();
-      const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore)
-        .mul(995)
-        .div(1000);
-      const crv3FraxToWithdrawWithoutPremium = sdFrax3crvToWithdrawMinusFee
-        .mul(frax3crvBalanceInStakedao)
-        .div(sdfrax3crvSupplyBefore);
-      const crv3FraxToWithdraw = crv3FraxToWithdrawWithoutPremium;
+    //   // calculate crv3Frax balances after
+    //   const sdfrax3crvSupplyBefore =
+    //     await stakedaoSdfrax3crvStrategy.totalSupply();
+    //   const frax3crvBalanceInStakedao =
+    //     await stakedaoSdfrax3crvStrategy.balance();
+    //   const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore)
+    //     .mul(995)
+    //     .div(1000);
+    //   const crv3FraxToWithdrawWithoutPremium = sdFrax3crvToWithdrawMinusFee
+    //     .mul(frax3crvBalanceInStakedao)
+    //     .div(sdfrax3crvSupplyBefore);
+    //   const crv3FraxToWithdraw = crv3FraxToWithdrawWithoutPremium;
 
-      // fee calculations
-      const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
+    //   // fee calculations
+    //   const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
 
-      await vault.connect(depositor2).withdrawCrvLp(sharesToWithdraw);
+    //   await vault.connect(depositor2).withdrawCrvLp(sharesToWithdraw);
 
-      // get vault balances after
-      const sharesAfter = await vault.totalSupply();
-      const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   // get vault balances after
+    //   const sharesAfter = await vault.totalSupply();
+    //   const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      // fee variables
-      const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
-      const balanceOfP2After = await frax3crv.balanceOf(depositor2.address);
+    //   // fee variables
+    //   const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
+    //   const balanceOfP2After = await frax3crv.balanceOf(depositor2.address);
 
-      expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
-        sharesAfter.add(sharesToWithdraw)
-      );
+    //   expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
+    //     sharesAfter.add(sharesToWithdraw)
+    //   );
 
-      // check vault balance
-      expect(
-        vaultSdFrax3CrvBalanceAfter,
-        "incorrect change in vault balance"
-      ).to.be.within(
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
-      );
-      expect(
-        vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
-        "incorrect change in vault total accounting"
-      ).to.be.eq(vaultTotalSdfrax3crvAfter);
+    //   // check vault balance
+    //   expect(
+    //     vaultSdFrax3CrvBalanceAfter,
+    //     "incorrect change in vault balance"
+    //   ).to.be.within(
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
+    //   );
+    //   expect(
+    //     vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
+    //     "incorrect change in vault total accounting"
+    //   ).to.be.eq(vaultTotalSdfrax3crvAfter);
 
-      // check p2 balance
-      expect(balanceOfP2After, "incorrect frac3crv transferred to p2").to.be.eq(
-        balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
-      );
-      expect(
-        balanceOfP2After.gt(p2DepositAmount),
-        "p2 shoult have made a profit"
-      ).to.be.true;
+    //   // check p2 balance
+    //   expect(balanceOfP2After, "incorrect frac3crv transferred to p2").to.be.eq(
+    //     balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
+    //   );
+    //   expect(
+    //     balanceOfP2After.gt(p2DepositAmount),
+    //     "p2 shoult have made a profit"
+    //   ).to.be.true;
 
-      // check fee
-      expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
-        balanceOfFeeRecipientBefore.add(fee)
-      );
-    });
+    //   // check fee
+    //   expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
+    //     balanceOfFeeRecipientBefore.add(fee)
+    //   );
+    // });
 
-    it("p3 withdraws FRAX3CRV", async () => {
-      // vault balance calculations
-      const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
-      const sharesBefore = await vault.totalSupply();
-      const sharesToWithdraw = await vault.balanceOf(depositor3.address);
+    // it("p3 withdraws FRAX3CRV", async () => {
+    //   // vault balance calculations
+    //   const vaultTotalSdfrax3crvBefore = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceBefore = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
+    //   const sharesBefore = await vault.totalSupply();
+    //   const sharesToWithdraw = await vault.balanceOf(depositor3.address);
 
-      // p3 balance calculations
-      const fee = sharesToWithdraw
-        .mul(vaultTotalSdfrax3crvBefore)
-        .div(sharesBefore)
-        .mul(5)
-        .div(1000);
-      const balanceOfP1Before = await frax3crv.balanceOf(depositor3.address);
+    //   // p3 balance calculations
+    //   const fee = sharesToWithdraw
+    //     .mul(vaultTotalSdfrax3crvBefore)
+    //     .div(sharesBefore)
+    //     .mul(5)
+    //     .div(1000);
+    //   const balanceOfP1Before = await frax3crv.balanceOf(depositor3.address);
 
-      // calculate sdFrax3Crv Balances after
-      const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore);
+    //   // calculate sdFrax3Crv Balances after
+    //   const sdFrax3crvToWithdraw = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore);
 
-      // calculate crv3Frax balances after
-      const sdfrax3crvSupplyBefore =
-        await stakedaoSdfrax3crvStrategy.totalSupply();
-      const frax3crvBalanceInStakedao =
-        await stakedaoSdfrax3crvStrategy.balance();
-      const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
-        .mul(sharesToWithdraw)
-        .div(sharesBefore)
-        .mul(995)
-        .div(1000);
-      const crv3FraxToWithdrawWithoutPremium = sdFrax3crvToWithdrawMinusFee
-        .mul(frax3crvBalanceInStakedao)
-        .div(sdfrax3crvSupplyBefore);
-      const crv3FraxToWithdraw = crv3FraxToWithdrawWithoutPremium;
+    //   // calculate crv3Frax balances after
+    //   const sdfrax3crvSupplyBefore =
+    //     await stakedaoSdfrax3crvStrategy.totalSupply();
+    //   const frax3crvBalanceInStakedao =
+    //     await stakedaoSdfrax3crvStrategy.balance();
+    //   const sdFrax3crvToWithdrawMinusFee = vaultTotalSdfrax3crvBefore
+    //     .mul(sharesToWithdraw)
+    //     .div(sharesBefore)
+    //     .mul(995)
+    //     .div(1000);
+    //   const crv3FraxToWithdrawWithoutPremium = sdFrax3crvToWithdrawMinusFee
+    //     .mul(frax3crvBalanceInStakedao)
+    //     .div(sdfrax3crvSupplyBefore);
+    //   const crv3FraxToWithdraw = crv3FraxToWithdrawWithoutPremium;
 
-      // fee calculations
-      const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
+    //   // fee calculations
+    //   const balanceOfFeeRecipientBefore = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
 
-      await vault.connect(depositor3).withdrawCrvLp(sharesToWithdraw);
+    //   await vault.connect(depositor3).withdrawCrvLp(sharesToWithdraw);
 
-      // get vault balances after
-      const sharesAfter = await vault.totalSupply();
-      const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
-      const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+    //   // get vault balances after
+    //   const sharesAfter = await vault.totalSupply();
+    //   const vaultTotalSdfrax3crvAfter = await vault.totalStakedaoAsset();
+    //   const vaultSdFrax3CrvBalanceAfter = await sdFrax3Crv.balanceOf(
+    //     vault.address
+    //   );
 
-      // fee variables
-      const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
-        feeRecipient.address
-      );
-      const balanceOfP3After = await frax3crv.balanceOf(depositor3.address);
+    //   // fee variables
+    //   const balanceOfFeeRecipientAfter = await sdFrax3Crv.balanceOf(
+    //     feeRecipient.address
+    //   );
+    //   const balanceOfP3After = await frax3crv.balanceOf(depositor3.address);
 
-      expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
-        sharesAfter.add(sharesToWithdraw)
-      );
+    //   expect(sharesBefore, "incorrect amount of shares withdrawn").to.be.equal(
+    //     sharesAfter.add(sharesToWithdraw)
+    //   );
 
-      // check vault balance
-      expect(
-        vaultSdFrax3CrvBalanceAfter,
-        "incorrect change in vault balance"
-      ).to.be.within(
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
-        vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
-      );
-      expect(
-        vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
-        "incorrect change in vault total accounting"
-      ).to.be.eq(vaultTotalSdfrax3crvAfter);
+    //   // check vault balance
+    //   expect(
+    //     vaultSdFrax3CrvBalanceAfter,
+    //     "incorrect change in vault balance"
+    //   ).to.be.within(
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).sub(1) as any,
+    //     vaultSdFrax3CrvBalanceBefore.sub(sdFrax3crvToWithdraw).add(1) as any
+    //   );
+    //   expect(
+    //     vaultTotalSdfrax3crvBefore.sub(sdFrax3crvToWithdraw),
+    //     "incorrect change in vault total accounting"
+    //   ).to.be.eq(vaultTotalSdfrax3crvAfter);
 
-      // check p3 balance
-      // TODO: why off by 2?
-      expect(balanceOfP3After, "incorrect frac3crv transferred to p3").to.be.eq(
-        balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
-      );
-      expect(balanceOfP3After, "p3 should have made a loss").to.be.eq(
-        p3DepositAmount.mul(995).div(1000)
-      );
+    //   // check p3 balance
+    //   // TODO: why off by 2?
+    //   expect(balanceOfP3After, "incorrect frac3crv transferred to p3").to.be.eq(
+    //     balanceOfP1Before.add(crv3FraxToWithdraw).add(1)
+    //   );
+    //   expect(balanceOfP3After, "p3 should have made a loss").to.be.eq(
+    //     p3DepositAmount.mul(995).div(1000)
+    //   );
 
-      // check fee
-      expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
-        balanceOfFeeRecipientBefore.add(fee)
-      );
-    });
+    //   // check fee
+    //   expect(balanceOfFeeRecipientAfter, "incorrect fee paid out").to.be.eq(
+    //     balanceOfFeeRecipientBefore.add(fee)
+    //   );
+    // });
   });
 
-  describe("Test deposit underlying and withdraw underlying", async () => {
-    this.beforeAll("send everyone frax", async () => {
-      const fraxWhale = "0x183D0dC5867c01bFB1dbBc41d6a9d3dE6e044626";
+  // describe("Test deposit underlying and withdraw underlying", async () => {
+  //   this.beforeAll("send everyone frax", async () => {
+  //     const fraxWhale = "0x183D0dC5867c01bFB1dbBc41d6a9d3dE6e044626";
 
-      // send everyone frax
-      await provider.send("hardhat_impersonateAccount", [fraxWhale]);
-      const signer = await ethers.provider.getSigner(fraxWhale);
-      await frax.connect(signer).transfer(depositor1.address, p1DepositAmount);
-      await provider.send("evm_mine", []);
-      await provider.send("hardhat_stopImpersonatingAccount", [fraxWhale]);
-    });
+  //     // send everyone frax
+  //     await provider.send("hardhat_impersonateAccount", [fraxWhale]);
+  //     const signer = await ethers.provider.getSigner(fraxWhale);
+  //     await frax.connect(signer).transfer(depositor1.address, p1DepositAmount);
+  //     await provider.send("evm_mine", []);
+  //     await provider.send("hardhat_stopImpersonatingAccount", [fraxWhale]);
+  //   });
 
-    this.beforeAll("send everyone usdc", async () => {
-      const usdcWhale = "0xe2644b0dc1b96C101d95421E95789eF6992B0E6A";
-      const usdcAmount = p1DepositAmount.div(1000000000000);
+  //   this.beforeAll("send everyone usdc", async () => {
+  //     const usdcWhale = "0xe2644b0dc1b96C101d95421E95789eF6992B0E6A";
+  //     const usdcAmount = p1DepositAmount.div(1000000000000);
 
-      // send everyone usdc
-      await provider.send("hardhat_impersonateAccount", [usdcWhale]);
-      const signer = await ethers.provider.getSigner(usdcWhale);
-      await usdc.connect(signer).transfer(depositor1.address, usdcAmount);
-      await provider.send("evm_mine", []);
-      await provider.send("hardhat_stopImpersonatingAccount", [usdcWhale]);
-    });
+  //     // send everyone usdc
+  //     await provider.send("hardhat_impersonateAccount", [usdcWhale]);
+  //     const signer = await ethers.provider.getSigner(usdcWhale);
+  //     await usdc.connect(signer).transfer(depositor1.address, usdcAmount);
+  //     await provider.send("evm_mine", []);
+  //     await provider.send("hardhat_stopImpersonatingAccount", [usdcWhale]);
+  //   });
 
-    this.beforeAll("send everyone usdt", async () => {
-      const usdtWhale = "0x3980c9ed79d2c191A89E02Fa3529C60eD6e9c04b";
-      const usdtAmount = p1DepositAmount.div(1000000000000);
+  //   this.beforeAll("send everyone usdt", async () => {
+  //     const usdtWhale = "0x3980c9ed79d2c191A89E02Fa3529C60eD6e9c04b";
+  //     const usdtAmount = p1DepositAmount.div(1000000000000);
 
-      // send everyone usdt
-      await provider.send("hardhat_impersonateAccount", [usdtWhale]);
-      const signer = await ethers.provider.getSigner(usdtWhale);
-      await usdt.connect(signer).transfer(depositor1.address, usdtAmount);
-      await provider.send("evm_mine", []);
-      await provider.send("hardhat_stopImpersonatingAccount", [usdtWhale]);
-    });
+  //     // send everyone usdt
+  //     await provider.send("hardhat_impersonateAccount", [usdtWhale]);
+  //     const signer = await ethers.provider.getSigner(usdtWhale);
+  //     await usdt.connect(signer).transfer(depositor1.address, usdtAmount);
+  //     await provider.send("evm_mine", []);
+  //     await provider.send("hardhat_stopImpersonatingAccount", [usdtWhale]);
+  //   });
 
-    it("p1 deposits frax", async () => {
-      // balances before
-      const amountFraxDeposited = p1DepositAmount;
-      const p1FraxBalanceBefore = await frax.balanceOf(depositor1.address);
-      const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
+  //   it("p1 deposits frax", async () => {
+  //     // balances before
+  //     const amountFraxDeposited = p1DepositAmount;
+  //     const p1FraxBalanceBefore = await frax.balanceOf(depositor1.address);
+  //     const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
 
-      // approve and deposit
-      await frax
-        .connect(depositor1)
-        .approve(vault.address, amountFraxDeposited);
-      await vault
-        .connect(depositor1)
-        .depositUnderlying(amountFraxDeposited, 0, 0);
+  //     // approve and deposit
+  //     await frax
+  //       .connect(depositor1)
+  //       .approve(vault.address, amountFraxDeposited);
+  //     await vault
+  //       .connect(depositor1)
+  //       .depositUnderlying(amountFraxDeposited, 0, 0);
 
-      // balances after
-      const p1FraxBalanceAfter = await frax.balanceOf(depositor1.address);
-      const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
-      const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+  //     // balances after
+  //     const p1FraxBalanceAfter = await frax.balanceOf(depositor1.address);
+  //     const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
+  //     const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
+  //       vault.address
+  //     );
 
-      expect(p1FraxBalanceAfter, "incorrect p1 frax balance").to.be.eq("0");
-      expect(
-        p1FraxBalanceBefore.gte(totalVaultBalanceAfter),
-        "incorrect amount of frax deposited from p1"
-      ).to.be.true;
-      expect(
-        totalVaultBalanceBefore,
-        "incorrect initial vault balance"
-      ).to.be.eq("0");
-      expect(
-        totalVaultBalanceAfter.gt("0"),
-        "vault balance should have increased"
-      ).to.be.true;
-      expect(
-        vaultSdFraxCrvBalanceAfter,
-        "mismatch between vault recorded balance and actual balance"
-      ).to.be.eq(totalVaultBalanceAfter);
+  //     expect(p1FraxBalanceAfter, "incorrect p1 frax balance").to.be.eq("0");
+  //     expect(
+  //       p1FraxBalanceBefore.gte(totalVaultBalanceAfter),
+  //       "incorrect amount of frax deposited from p1"
+  //     ).to.be.true;
+  //     expect(
+  //       totalVaultBalanceBefore,
+  //       "incorrect initial vault balance"
+  //     ).to.be.eq("0");
+  //     expect(
+  //       totalVaultBalanceAfter.gt("0"),
+  //       "vault balance should have increased"
+  //     ).to.be.true;
+  //     expect(
+  //       vaultSdFraxCrvBalanceAfter,
+  //       "mismatch between vault recorded balance and actual balance"
+  //     ).to.be.eq(totalVaultBalanceAfter);
 
-      // check the minted share balances
-      expect(
-        (await vault.balanceOf(depositor1.address)).gte(
-          p1DepositAmount.mul(80).div(100)
-        ),
-        "incorrcect amount of shares minted"
-      ).to.be.true;
-    });
+  //     // check the minted share balances
+  //     expect(
+  //       (await vault.balanceOf(depositor1.address)).gte(
+  //         p1DepositAmount.mul(80).div(100)
+  //       ),
+  //       "incorrcect amount of shares minted"
+  //     ).to.be.true;
+  //   });
 
-    it("p1 withdraws frax", async () => {
-      const sharesToWithdraw = await vault.balanceOf(depositor1.address);
+  //   it("p1 withdraws frax", async () => {
+  //     const sharesToWithdraw = await vault.balanceOf(depositor1.address);
 
-      await vault.connect(depositor1).withdrawUnderlying(sharesToWithdraw, "0");
+  //     await vault.connect(depositor1).withdrawUnderlying(sharesToWithdraw, "0");
 
-      const p1FraxBalance = await frax.balanceOf(depositor1.address);
+  //     const p1FraxBalance = await frax.balanceOf(depositor1.address);
 
-      // check balance of p1 (TODO: why is this failing?)
-      // expect(p1FraxBalance, 'incorrect balance').to.be.eq(p1DepositAmount.mul(995).div(1000));
-    });
+  //     // check balance of p1 (TODO: why is this failing?)
+  //     // expect(p1FraxBalance, 'incorrect balance').to.be.eq(p1DepositAmount.mul(995).div(1000));
+  //   });
 
-    it("p1 deposits usdc", async () => {
-      // balances before
-      const amountUsdcDeposited = p1DepositAmount.div(1000000000000);
-      const p1UsdcBalanceBefore = await usdc.balanceOf(depositor1.address);
-      const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
+  //   it("p1 deposits usdc", async () => {
+  //     // balances before
+  //     const amountUsdcDeposited = p1DepositAmount.div(1000000000000);
+  //     const p1UsdcBalanceBefore = await usdc.balanceOf(depositor1.address);
+  //     const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
 
-      // approve and deposit
-      await usdc
-        .connect(depositor1)
-        .approve(vault.address, amountUsdcDeposited);
-      await vault
-        .connect(depositor1)
-        .depositUnderlying(amountUsdcDeposited, 0, 2);
+  //     // approve and deposit
+  //     await usdc
+  //       .connect(depositor1)
+  //       .approve(vault.address, amountUsdcDeposited);
+  //     await vault
+  //       .connect(depositor1)
+  //       .depositUnderlying(amountUsdcDeposited, 0, 2);
 
-      // balances after
-      const p1UsdcBalanceAfter = await usdc.balanceOf(depositor1.address);
-      const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
-      const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+  //     // balances after
+  //     const p1UsdcBalanceAfter = await usdc.balanceOf(depositor1.address);
+  //     const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
+  //     const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
+  //       vault.address
+  //     );
 
-      expect(p1UsdcBalanceAfter, "incorrect p1 usdc balance").to.be.eq("0");
-      expect(
-        p1UsdcBalanceBefore.gte(totalVaultBalanceAfter.div(1000000000000)),
-        "incorrect amount of usdc deposited from p1"
-      ).to.be.true;
-      expect(
-        totalVaultBalanceBefore,
-        "incorrect initial vault balance"
-      ).to.be.eq("0");
-      expect(
-        totalVaultBalanceAfter.gt("0"),
-        "vault balance should have increased"
-      ).to.be.true;
-      expect(
-        vaultSdFraxCrvBalanceAfter,
-        "mismatch between vault recorded balance and actual balance"
-      ).to.be.eq(totalVaultBalanceAfter);
+  //     expect(p1UsdcBalanceAfter, "incorrect p1 usdc balance").to.be.eq("0");
+  //     expect(
+  //       p1UsdcBalanceBefore.gte(totalVaultBalanceAfter.div(1000000000000)),
+  //       "incorrect amount of usdc deposited from p1"
+  //     ).to.be.true;
+  //     expect(
+  //       totalVaultBalanceBefore,
+  //       "incorrect initial vault balance"
+  //     ).to.be.eq("0");
+  //     expect(
+  //       totalVaultBalanceAfter.gt("0"),
+  //       "vault balance should have increased"
+  //     ).to.be.true;
+  //     expect(
+  //       vaultSdFraxCrvBalanceAfter,
+  //       "mismatch between vault recorded balance and actual balance"
+  //     ).to.be.eq(totalVaultBalanceAfter);
 
-      // check the minted share balances
-      expect(
-        (await vault.balanceOf(depositor1.address)).gte(
-          p1DepositAmount.mul(80).div(100)
-        ),
-        "incorrcect amount of shares minted"
-      ).to.be.true;
-    });
+  //     // check the minted share balances
+  //     expect(
+  //       (await vault.balanceOf(depositor1.address)).gte(
+  //         p1DepositAmount.mul(80).div(100)
+  //       ),
+  //       "incorrcect amount of shares minted"
+  //     ).to.be.true;
+  //   });
 
-    it("p1 withdraws", async () => {
-      const sharesToWithdraw = await vault.balanceOf(depositor1.address);
+  //   it("p1 withdraws", async () => {
+  //     const sharesToWithdraw = await vault.balanceOf(depositor1.address);
 
-      await vault.connect(depositor1).withdrawUnderlying(sharesToWithdraw, "0");
-    });
+  //     await vault.connect(depositor1).withdrawUnderlying(sharesToWithdraw, "0");
+  //   });
 
-    it("p1 deposits usdt", async () => {
-      // balances before
-      const amountUsdtDeposited = p1DepositAmount.div(1000000000000);
-      const p1UsdtBalanceBefore = await usdt.balanceOf(depositor1.address);
-      const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
+  //   it("p1 deposits usdt", async () => {
+  //     // balances before
+  //     const amountUsdtDeposited = p1DepositAmount.div(1000000000000);
+  //     const p1UsdtBalanceBefore = await usdt.balanceOf(depositor1.address);
+  //     const totalVaultBalanceBefore = await vault.totalStakedaoAsset();
 
-      // approve and deposit
-      await usdt
-        .connect(depositor1)
-        .approve(vault.address, amountUsdtDeposited);
-      await vault
-        .connect(depositor1)
-        .depositUnderlying(amountUsdtDeposited, 0, 3);
+  //     // approve and deposit
+  //     await usdt
+  //       .connect(depositor1)
+  //       .approve(vault.address, amountUsdtDeposited);
+  //     await vault
+  //       .connect(depositor1)
+  //       .depositUnderlying(amountUsdtDeposited, 0, 3);
 
-      // balances after
-      const p1UsdtBalanceAfter = await usdt.balanceOf(depositor1.address);
-      const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
-      const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
-        vault.address
-      );
+  //     // balances after
+  //     const p1UsdtBalanceAfter = await usdt.balanceOf(depositor1.address);
+  //     const totalVaultBalanceAfter = await vault.totalStakedaoAsset();
+  //     const vaultSdFraxCrvBalanceAfter = await sdFrax3Crv.balanceOf(
+  //       vault.address
+  //     );
 
-      expect(p1UsdtBalanceAfter, "incorrect p1 usdt balance").to.be.eq("0");
-      expect(
-        p1UsdtBalanceBefore.gte(totalVaultBalanceAfter.div(1000000000000)),
-        "incorrect amount of usdt deposited from p1"
-      ).to.be.true;
-      expect(
-        totalVaultBalanceBefore,
-        "incorrect initial vault balance"
-      ).to.be.eq("0");
-      expect(
-        totalVaultBalanceAfter.gt("0"),
-        "vault balance should have increased"
-      ).to.be.true;
-      expect(
-        vaultSdFraxCrvBalanceAfter,
-        "mismatch between vault recorded balance and actual balance"
-      ).to.be.eq(totalVaultBalanceAfter);
+  //     expect(p1UsdtBalanceAfter, "incorrect p1 usdt balance").to.be.eq("0");
+  //     expect(
+  //       p1UsdtBalanceBefore.gte(totalVaultBalanceAfter.div(1000000000000)),
+  //       "incorrect amount of usdt deposited from p1"
+  //     ).to.be.true;
+  //     expect(
+  //       totalVaultBalanceBefore,
+  //       "incorrect initial vault balance"
+  //     ).to.be.eq("0");
+  //     expect(
+  //       totalVaultBalanceAfter.gt("0"),
+  //       "vault balance should have increased"
+  //     ).to.be.true;
+  //     expect(
+  //       vaultSdFraxCrvBalanceAfter,
+  //       "mismatch between vault recorded balance and actual balance"
+  //     ).to.be.eq(totalVaultBalanceAfter);
 
-      // check the minted share balances
-      expect(
-        (await vault.balanceOf(depositor1.address)).gte(
-          p1DepositAmount.mul(80).div(100)
-        ),
-        "incorrcect amount of shares minted"
-      ).to.be.true;
-    });
-  });
+  //     // check the minted share balances
+  //     expect(
+  //       (await vault.balanceOf(depositor1.address)).gte(
+  //         p1DepositAmount.mul(80).div(100)
+  //       ),
+  //       "incorrcect amount of shares minted"
+  //     ).to.be.true;
+  //   });
+  // });
 });

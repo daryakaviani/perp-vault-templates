@@ -87,7 +87,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
 
         _openVault(_vaultType);
 
-        lastExchangeRate = _getCurrentExchangeRate();
+        lastExchangeRate = getCurrentExchangeRate();
     }
 
     function onlyVault() private view {
@@ -145,7 +145,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // get sdtoken balance
         uint256 sdTokenBalance = stakedaoStrategy.balanceOf(address(this));
         // get new exchange rate
-        uint256 newExchangeRate = _getCurrentExchangeRate();
+        uint256 newExchangeRate = getCurrentExchangeRate();
         // usdc balance with last week's exchange rate
         uint256 lastUsdcBalance = sdTokenBalance.div(lastExchangeRate);
         // usdc balance with this week's exchange rate
@@ -184,7 +184,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
     /**
     @dev get current exchange rate (sdFrax3Crv-usd).
     */
-    function _getCurrentExchangeRate() internal returns (uint256) {
+    function getCurrentExchangeRate() public view returns (uint256) {
         // sdFrax3Crv -> curve LP token
         uint256 pricePerShare = stakedaoStrategy.getPricePerFullShare(); // 18 decimals
         // curve LP token -> usd
