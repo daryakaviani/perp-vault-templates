@@ -159,7 +159,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         _withdrawYield(sdYieldToWithdraw);
 
         // buy options via airswap order (wantedAsset is usdc)
-        require(wantedAsset.balanceOf(this) >= usdcYield);
+        require(wantedAsset.balanceOf(address(this)) >= usdcYield);
         IERC20(wantedAsset).safeIncreaseAllowance(address(airswap), usdcYield);
         _fillAirswapOrder(_order);
 
