@@ -233,7 +233,7 @@ describe("Mainnet Fork Tests", function () {
   });
 
   this.beforeAll("send counterparty usdc", async () => {
-    const usdcWhale = "0x7AfaFe3C06F4D4864fE37E981bf73279B5f44218";
+    const usdcWhale = "0xe2644b0dc1b96C101d95421E95789eF6992B0E6A";
     const premiumToSend = premium.div(1000000000000);
 
     // send everyone frax
@@ -247,7 +247,7 @@ describe("Mainnet Fork Tests", function () {
   });
 
   this.beforeAll("send everyone usdc", async () => {
-    const usdcWhale = "0x47Bc10781E8f71c0e7cf97B0a5a88F4CFfF21309";
+    const usdcWhale = "0xe2644b0dc1b96C101d95421E95789eF6992B0E6A";
     // send everyone usdc
     await provider.send("hardhat_impersonateAccount", [usdcWhale]);
     const signer = await ethers.provider.getSigner(usdcWhale);

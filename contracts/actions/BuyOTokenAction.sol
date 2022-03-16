@@ -74,7 +74,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         stakedaoStrategy = IStakeDao(_sdTokenAddress);
         curveLPToken = stakedaoStrategy.token();
 
-        curve = ICurve(_curveMetaZapAddress);
+        curve = ICurve(address(curveLPToken));
 
         // enable vault to take all the sdToken back and re-distribute.
         IERC20(_sdTokenAddress).safeApprove(_vault, uint256(-1));
