@@ -326,24 +326,24 @@ describe("Mainnet Fork Tests", function () {
       )) as IOToken;
     });
 
-    it("p1 deposits FRAX3CRV", async () => {
-      // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
-      const amountfrax3crvDeposited = p1DepositAmount;
+    it("p1 deposits USDC", async () => {
+      // calculating the ideal amount of USDC that should be deposited
+      const amountUsdcDeposited = p1DepositAmount;
 
       // multiplying by 10^10 to scale a 10^8 number to a 10^18 number
       const sdfrax3crvSupplyBefore =
         await stakedaoSdfrax3crvStrategy.totalSupply();
       const frax3crvBalanceInStakedao =
         await stakedaoSdfrax3crvStrategy.balance();
-      const sdFrax3crvDeposited = amountfrax3crvDeposited
+      const sdFrax3crvDeposited = amountUsdcDeposited
         .mul(sdfrax3crvSupplyBefore)
         .div(frax3crvBalanceInStakedao);
 
       // approve and deposit
-      await frax3crv
+      await usdc
         .connect(depositor1)
-        .approve(vault.address, amountfrax3crvDeposited);
-      await vault.connect(depositor1).depositCrvLP(amountfrax3crvDeposited);
+        .approve(vault.address, amountUsdcDeposited);
+      await vault.connect(depositor1).depositCrvLP(amountUsdcDeposited);
 
       const vaultTotal = await vault.totalStakedaoAsset();
       const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
