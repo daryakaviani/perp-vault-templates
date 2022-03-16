@@ -200,9 +200,6 @@ describe("Mainnet Fork Tests", function () {
       });
       await provider.send("hardhat_impersonateAccount", [opynOwner]);
       const signer = await ethers.provider.getSigner(opynOwner);
-      // await oracle
-      //   .connect(signer)
-      //   .setStablePrice(frax.address, '100000000');
       await oracle
         .connect(signer)
         .setAssetPricer(weth.address, wethPricer.address);
