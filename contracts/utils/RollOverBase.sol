@@ -77,8 +77,8 @@ contract RollOverBase is Ownable {
 
         commitStateStart = block.timestamp;
 
-        IOToken nextToken = IOToken(_nextOToken);
-        require(nextToken.underlyingAsset() == weth, "S8");
+        // IOToken nextToken = IOToken(_nextOToken);
+        // require(nextToken.underlyingAsset() == weth, "S8");
     }
 
     function _setActionIdle() internal {
