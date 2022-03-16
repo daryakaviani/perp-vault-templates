@@ -391,121 +391,115 @@ describe("Mainnet Fork Tests", function () {
       ).to.be.equal(totalSharesMinted);
     });
 
-    // it("tests getPrice in sdFrax3CrvPricer", async () => {
-    //   await wethPricer.setPrice("400000000000"); // $4000
-    //   const usdcPrice = await oracle.getPrice(usdc.address);
-    //   const sdFrax3CrvPrice = await oracle.getPrice(sdFrax3Crv.address);
-    //   expect(usdcPrice.toNumber()).to.be.lessThanOrEqual(
-    //     sdFrax3CrvPrice.toNumber()
-    //   );
-    // });
+    it("tests getPrice in sdFrax3CrvPricer", async () => {
+      await wethPricer.setPrice("400000000000"); // $4000
+      const usdcPrice = await oracle.getPrice(usdc.address);
+      const sdFrax3CrvPrice = await oracle.getPrice(sdFrax3Crv.address);
+      expect(usdcPrice.toNumber()).to.be.lessThanOrEqual(
+        sdFrax3CrvPrice.toNumber()
+      );
+    });
 
-    // // it("owner commits to the option", async () => {
-    // //   expect(await action1.state()).to.be.equal(ActionState.Idle);
-    // //   await action1.commitOToken(otoken.address);
-    // //   expect(await action1.state()).to.be.equal(ActionState.Committed);
-    // // });
+    it("owner buys options with usdc", async () => {
+      const exchangeRateBefore = await action1.getCurrentExchangeRate();
 
-    // it("owner buys options with usdc", async () => {
-    //   const exchangeRateBefore = await action1.getCurrentExchangeRate();
+      // increase time
+      const minPeriod = await action1.MIN_COMMIT_PERIOD();
+      await provider.send("evm_increaseTime", [minPeriod.toNumber()]); // increase time
+      await provider.send("evm_mine", []);
 
-    //   // increase time
-    //   const minPeriod = await action1.MIN_COMMIT_PERIOD();
-    //   await provider.send("evm_increaseTime", [minPeriod.toNumber()]); // increase time
-    //   await provider.send("evm_mine", []);
+      await vault.rollOver([(100 - reserveFactor) * 100]);
 
-    //   await vault.rollOver([(100 - reserveFactor) * 100]);
+      // get current vault sdFrax3Crv balance
+      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
 
-    //   // get current vault sdFrax3Crv balance
-    //   const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+      const exchangeRateAfter = await action1.getCurrentExchangeRate();
 
-    //   const exchangeRateAfter = await action1.getCurrentExchangeRate();
+      // usdc balance with exchange rate before time passed
+      const usdcBalanceBefore = vaultSdfrax3crvBalance.div(exchangeRateBefore);
 
-    //   // usdc balance with exchange rate before time passed
-    //   const usdcBalanceBefore = vaultSdfrax3crvBalance.div(exchangeRateBefore);
+      // usdc balance with exchange rate after time passed
+      const usdcBalanceAfter = vaultSdfrax3crvBalance.div(exchangeRateAfter);
 
-    //   // usdc balance with exchange rate after time passed
-    //   const usdcBalanceAfter = vaultSdfrax3crvBalance.div(exchangeRateAfter);
+      // usdc yield accrued
+      const yieldAmount = usdcBalanceAfter.sub(usdcBalanceBefore);
 
-    //   // usdc yield accrued
-    //   const yieldAmount = usdcBalanceAfter.sub(usdcBalanceBefore);
+      // const expectedSdfrax3crvBalanceInVault = vaultSdfrax3crvBalanceBefore
+      //   .mul(reserveFactor)
+      //   .div(100);
+      const collateralAmount = await sdFrax3Crv.balanceOf(action1.address);
+      //   // This assumes premium was paid in frax3crv. This is the lower bount
+      //   const premiumInfrax3crv = premium
+      //     .div(await frax3crv.get_virtual_price())
+      //     .mul(utils.parseEther("1.0"));
+      //   const premiumInSdfrax3crv = premiumInfrax3crv
+      //     .mul(await stakedaoSdfrax3crvStrategy.totalSupply())
+      //     .div(await stakedaoSdfrax3crvStrategy.balance());
+      //   const expectedTotal =
+      //     vaultSdfrax3crvBalanceBefore.add(premiumInSdfrax3crv);
+      //   const expectedSdfrax3crvBalanceInAction = vaultSdfrax3crvBalanceBefore
+      //     .sub(expectedSdfrax3crvBalanceInVault)
+      //     .add(premiumInSdfrax3crv);
 
-    //   // const expectedSdfrax3crvBalanceInVault = vaultSdfrax3crvBalanceBefore
-    //   //   .mul(reserveFactor)
-    //   //   .div(100);
-    //   const collateralAmount = await sdFrax3Crv.balanceOf(action1.address);
-    //   //   // This assumes premium was paid in frax3crv. This is the lower bount
-    //   //   const premiumInfrax3crv = premium
-    //   //     .div(await frax3crv.get_virtual_price())
-    //   //     .mul(utils.parseEther("1.0"));
-    //   //   const premiumInSdfrax3crv = premiumInfrax3crv
-    //   //     .mul(await stakedaoSdfrax3crvStrategy.totalSupply())
-    //   //     .div(await stakedaoSdfrax3crvStrategy.balance());
-    //   //   const expectedTotal =
-    //   //     vaultSdfrax3crvBalanceBefore.add(premiumInSdfrax3crv);
-    //   //   const expectedSdfrax3crvBalanceInAction = vaultSdfrax3crvBalanceBefore
-    //   //     .sub(expectedSdfrax3crvBalanceInVault)
-    //   //     .add(premiumInSdfrax3crv);
+      const marginPoolBalanceOfsdFrax3CrvBefore = await sdFrax3Crv.balanceOf(
+        marginPoolAddess
+      );
 
-    //   const marginPoolBalanceOfsdFrax3CrvBefore = await sdFrax3Crv.balanceOf(
-    //     marginPoolAddess
-    //   );
+      const premiumToSend = premium.div(1000000000000);
 
-    //   const premiumToSend = premium.div(1000000000000);
+      const order = await getOrder(
+        action1.address,
+        otoken.address,
+        yieldAmount.toString(), // this will be ignored
+        counterpartyWallet.address,
+        usdc.address,
+        premiumToSend.toString(),
+        swapAddress,
+        counterpartyWallet.privateKey
+      );
 
-    //   const order = await getOrder(
-    //     action1.address,
-    //     otoken.address,
-    //     yieldAmount.toString(), // this will be ignored
-    //     counterpartyWallet.address,
-    //     usdc.address,
-    //     premiumToSend.toString(),
-    //     swapAddress,
-    //     counterpartyWallet.privateKey
-    //   );
+      expect(
+        (await action1.lockedAsset()).eq("0"),
+        "collateral should not be locked"
+      ).to.be.true;
 
-    //   expect(
-    //     (await action1.lockedAsset()).eq("0"),
-    //     "collateral should not be locked"
-    //   ).to.be.true;
+      // buy oToken
+      await action1.buyOToken(order);
 
-    //   // buy oToken
-    //   await action1.buyOToken(order);
+      //   const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
+      //     vault.address
+      //   );
 
-    //   //   const vaultSdfrax3crvBalanceAfter = await sdFrax3Crv.balanceOf(
-    //   //     vault.address
-    //   //   );
+      //   expect(
+      //     await (
+      //       await action1.currentValue()
+      //     ).gte(expectedSdfrax3crvBalanceInAction),
+      //     "incorrect current value in action"
+      //   ).to.be.true;
+      expect(
+        await action1.lockedAsset(),
+        "incorrect accounting in action"
+      ).to.be.equal(collateralAmount);
+      expect(await usdc.balanceOf(action1.address)).to.be.equal(
+        usdcBalanceBefore
+      );
 
-    //   //   expect(
-    //   //     await (
-    //   //       await action1.currentValue()
-    //   //     ).gte(expectedSdfrax3crvBalanceInAction),
-    //   //     "incorrect current value in action"
-    //   //   ).to.be.true;
-    //   expect(
-    //     await action1.lockedAsset(),
-    //     "incorrect accounting in action"
-    //   ).to.be.equal(collateralAmount);
-    //   expect(await usdc.balanceOf(action1.address)).to.be.equal(
-    //     usdcBalanceBefore
-    //   );
+      // check the otoken balance of the action increased by yield amount
+      expect(
+        await otoken.balanceOf(action1.address),
+        "incorrect otoken balance obtained"
+      ).to.be.equal(yieldAmount);
 
-    //   // check the otoken balance of the action increased by yield amount
-    //   expect(
-    //     await otoken.balanceOf(action1.address),
-    //     "incorrect otoken balance obtained"
-    //   ).to.be.equal(yieldAmount);
+      const marginPoolBalanceOfsdFrax3CrvAfter = await sdFrax3Crv.balanceOf(
+        marginPoolAddess
+      );
 
-    //   const marginPoolBalanceOfsdFrax3CrvAfter = await sdFrax3Crv.balanceOf(
-    //     marginPoolAddess
-    //   );
-
-    //   // check sdFrax3Crv balance in opyn
-    //   expect(
-    //     marginPoolBalanceOfsdFrax3CrvAfter,
-    //     "incorrect balance in Opyn"
-    //   ).to.be.equal(marginPoolBalanceOfsdFrax3CrvBefore.add(collateralAmount));
-    // });
+      // check sdFrax3Crv balance in opyn
+      expect(
+        marginPoolBalanceOfsdFrax3CrvAfter,
+        "incorrect balance in Opyn"
+      ).to.be.equal(marginPoolBalanceOfsdFrax3CrvBefore.add(collateralAmount));
+    });
 
     // it("p3 deposits FRAX3CRV", async () => {
     //   // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
