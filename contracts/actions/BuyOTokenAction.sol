@@ -151,7 +151,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         // usdc balance with this week's exchange rate
         uint256 newUsdcBalance = sdTokenBalance.div(newExchangeRate);
         // usdc yield accrued
-        uint256 usdcYield = newUsdcBalance - lastUsdcBalance;
+        uint256 usdcYield = newUsdcBalance.sub(lastUsdcBalance);
         // sdToken yield accrued
         uint256 sdYieldToWithdraw = usdcYield.mul(newExchangeRate);
 
