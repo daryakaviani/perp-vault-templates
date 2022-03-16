@@ -246,14 +246,12 @@ describe("Mainnet Fork Tests", function () {
     await provider.send("hardhat_stopImpersonatingAccount", [usdcWhale]);
   });
 
-  this.beforeAll("send everyone frax3crv", async () => {
-    const frax3crvWhale = "0x47Bc10781E8f71c0e7cf97B0a5a88F4CFfF21309";
-    // send everyone frax
-    await provider.send("hardhat_impersonateAccount", [frax3crvWhale]);
-    const signer = await ethers.provider.getSigner(frax3crvWhale);
-    await frax3crv
-      .connect(signer)
-      .transfer(depositor1.address, p1DepositAmount);
+  this.beforeAll("send everyone usdc", async () => {
+    const usdcWhale = "0x47Bc10781E8f71c0e7cf97B0a5a88F4CFfF21309";
+    // send everyone usdc
+    await provider.send("hardhat_impersonateAccount", [usdcWhale]);
+    const signer = await ethers.provider.getSigner(usdcWhale);
+    await usdc.connect(signer).transfer(depositor1.address, p1DepositAmount);
     await frax3crv
       .connect(signer)
       .transfer(depositor2.address, p2DepositAmount);
@@ -261,7 +259,7 @@ describe("Mainnet Fork Tests", function () {
       .connect(signer)
       .transfer(depositor3.address, p3DepositAmount);
     await provider.send("evm_mine", []);
-    await provider.send("hardhat_stopImpersonatingAccount", [frax3crvWhale]);
+    await provider.send("hardhat_stopImpersonatingAccount", [usdcWhale]);
   });
 
   this.beforeAll("prepare counterparty wallet", async () => {
@@ -272,9 +270,8 @@ describe("Mainnet Fork Tests", function () {
       value: utils.parseEther("1"),
     });
 
-    // approve frax to be spent by counterparty
+    // approve usdc to be spent by counterparty
     await usdc.connect(counterpartyWallet).approve(swapAddress, premium);
-    // await frax3crv.connect(counterpartyWallet).approve(swapAddress, premium);
   });
 
   describe("check the admin setup", async () => {
