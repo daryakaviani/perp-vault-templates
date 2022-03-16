@@ -335,7 +335,6 @@ describe("Mainnet Fork Tests", function () {
       const vaultTotal = await vault.totalStakedaoAsset();
       const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
       const totalSharesMinted = vaultSdfrax3crvBalance;
-      // const usdcBlanace = await vault.balanceOf(address(usdc));
 
       // check the deposit went through (fuzzily due to slippage and exchange rate)
       expect(vaultTotal, "internal accounting is incorrect").to.be.gte(
@@ -355,48 +354,42 @@ describe("Mainnet Fork Tests", function () {
       ).to.be.equal(totalSharesMinted);
     });
 
-    // it("p2 deposits USDC", async () => {
-    //   // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
-    //   const amountUsdcDeposited = p2DepositAmount;
+    it("p2 deposits USDC", async () => {
+      // calculating the ideal amount of sdCrvRenWsdFrax3Crv that should be deposited
+      const amountUsdcDeposited = p2DepositAmount;
 
-    //   // multiplying by 10^10 to scale a 10^8 number to a 10^18 number
-    //   const sdfrax3crvSupplyBefore =
-    //     await stakedaoSdfrax3crvStrategy.totalSupply();
-    //   const frax3crvBalanceInStakedao =
-    //     await stakedaoSdfrax3crvStrategy.balance();
-    //   const sdFrax3crvDeposited = amountUsdcDeposited
-    //     .mul(sdfrax3crvSupplyBefore)
-    //     .div(frax3crvBalanceInStakedao);
+      // keep track of balance before
+      const vaultTotalBefore = await vault.totalStakedaoAsset();
 
-    //   // keep track of balance before
-    //   const vaultTotalBefore = await vault.totalStakedaoAsset();
+      // approve and deposit
+      await usdc
+        .connect(depositor2)
+        .approve(vault.address, amountUsdcDeposited);
+      await vault
+        .connect(depositor2)
+        .depositUnderlying(amountUsdcDeposited, 0, 2);
 
-    //   // approve and deposit
-    //   await usdc
-    //     .connect(depositor2)
-    //     .approve(vault.address, amountUsdcDeposited);
-    //   await vault.connect(depositor2).depositCrvLP(amountUsdcDeposited);
+      const vaultTotal = await vault.totalStakedaoAsset();
+      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+      const totalSharesMinted = vaultTotal.sub(vaultTotalBefore);
 
-    //   const vaultTotal = await vault.totalStakedaoAsset();
-    //   const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
-    //   const totalSharesMinted = vaultTotal.sub(vaultTotalBefore);
+      // check the deposit went through (fuzzily due to slippage and exchange rate)
+      expect(vaultTotal, "internal accounting is incorrect").to.be.gte(
+        amountUsdcDeposited.mul(1000000000000).mul(85).div(100)
+      );
 
-    //   // check the sdFrax3Crv token balances
-    //   expect(
-    //     vaultTotal.sub(vaultTotalBefore),
-    //     "internal accounting is incorrect"
-    //   ).to.be.eq(sdFrax3crvDeposited);
-    //   expect(vaultSdfrax3crvBalance).to.be.equal(
-    //     vaultTotal,
-    //     "internal balance is incorrect"
-    //   );
+      // check the sdFrax3Crv balance in the vault
+      expect(vaultSdfrax3crvBalance).to.be.equal(
+        vaultTotal,
+        "internal balance is incorrect"
+      );
 
-    //   // check the minted share balances
-    //   expect(
-    //     await vault.balanceOf(depositor2.address),
-    //     "incorrcect amount of shares minted"
-    //   ).to.be.equal(totalSharesMinted);
-    // });
+      // check the minted share balances
+      expect(
+        await vault.balanceOf(depositor2.address),
+        "incorrect amount of shares minted"
+      ).to.be.equal(totalSharesMinted);
+    });
 
     // it("tests getPrice in sdFrax3CrvPricer", async () => {
     //   await wethPricer.setPrice("400000000000"); // $4000
