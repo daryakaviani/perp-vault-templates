@@ -139,34 +139,43 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
      */
     function buyOToken(SwapTypes.Order memory _order) external onlyOwner {
         onlyActivated();
+        // console.log()
         require(_order.sender.wallet == address(this), "S3");
         require(_order.signer.token == otoken, "S4");
 
+
         // get sdtoken balance
         uint256 sdTokenBalance = stakedaoStrategy.balanceOf(address(this));
+        console.log(sdTokenBalance);
         // get new exchange rate
         uint256 newExchangeRate = getCurrentExchangeRate();
+        console.log(newExchangeRate);
         // usdc balance with last week's exchange rate
         uint256 lastUsdcBalance = sdTokenBalance.div(lastExchangeRate);
+        console.log(lastUsdcBalance);
         // usdc balance with this week's exchange rate
         uint256 newUsdcBalance = sdTokenBalance.div(newExchangeRate);
+        console.log(newUsdcBalance);
         // usdc yield accrued
         uint256 usdcYield = newUsdcBalance.sub(lastUsdcBalance);
+        console.log(usdcYield);
         // sdToken yield accrued
         uint256 sdYieldToWithdraw = usdcYield.mul(newExchangeRate);
+        console.log(sdYieldToWithdraw);
 
         // withdraw usdc from stakedao / curve so we can buy options
         _withdrawYield(sdYieldToWithdraw);
 
-        // buy options via airswap order (wantedAsset is usdc)
-        require(wantedAsset.balanceOf(address(this)) >= usdcYield);
-        IERC20(wantedAsset).safeIncreaseAllowance(address(airswap), usdcYield);
-        _fillAirswapOrder(_order);
+        // // buy options via airswap order (wantedAsset is usdc)
+        // require(wantedAsset.balanceOf(address(this)) >= usdcYield);
+        // require(wantedAsset.balanceOf(address(this)) >= _order.sender.amount);
+        // IERC20(wantedAsset).safeIncreaseAllowance(address(airswap), usdcYield);
+        // _fillAirswapOrder(_order);
 
-        // update lastExchangeRate to this week's new exchange rate
-        lastExchangeRate = newExchangeRate;
+        // // update lastExchangeRate to this week's new exchange rate
+        // lastExchangeRate = newExchangeRate;
 
-        emit BuyOToken();
+        // emit BuyOToken();
     }
 
     /**
@@ -233,7 +242,7 @@ contract BuyOTokenAction is IAction, AirswapBase, RollOverBase {
         curveMetaZap.remove_liquidity_one_coin(
             address(curveLPToken),
             curveLPToken.balanceOf(address(this)),
-            0, // not sure if this is the right index
+            2, 
             0
         );
     }

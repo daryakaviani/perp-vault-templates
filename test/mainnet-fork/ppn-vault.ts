@@ -400,6 +400,12 @@ describe("Mainnet Fork Tests", function () {
       );
     });
 
+    it("owner commits to the option", async () => {
+      expect(await action1.state()).to.be.equal(ActionState.Idle);
+      await action1.commitOToken(otoken.address);
+      expect(await action1.state()).to.be.equal(ActionState.Committed);
+    });
+
     it("owner buys options with usdc", async () => {
       const exchangeRateBefore = await action1.getCurrentExchangeRate();
 
@@ -449,10 +455,10 @@ describe("Mainnet Fork Tests", function () {
 
       const order = await getOrder(
         action1.address,
-        otoken.address,
-        yieldAmount.toString(), // this will be ignored
-        counterpartyWallet.address,
         usdc.address,
+        yieldAmount.toString(),
+        counterpartyWallet.address,
+        otoken.address,
         premiumToSend.toString(),
         swapAddress,
         counterpartyWallet.privateKey
