@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.7.0;
+pragma solidity >=0.7.2;
 
 import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/drafts/ERC20PermitUpgradeable.sol";
 import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
@@ -10,6 +10,7 @@ import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 contract MockStakedao is ERC20PermitUpgradeable {
     
   address ecrv;
+  uint256 exchangeRate;
 
   function init(string memory name_, string memory symbol_, uint8 decimals_, address _ecrv) public {
     __ERC20_init_unchained(name_, symbol_);
@@ -26,8 +27,12 @@ contract MockStakedao is ERC20PermitUpgradeable {
       mint(msg.sender, amount);
   }
 
-  function getPricePerFullShare() external pure returns (uint256) {
-      return 1 ether;
+  function getPricePerFullShare() external view returns (uint256) {
+      return exchangeRate;
+  }
+
+  function setPricePerFullShare(uint256 newRate) public {
+      exchangeRate = newRate;
   }
 
   function token () public view returns (address) {

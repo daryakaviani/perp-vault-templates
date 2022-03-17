@@ -14,6 +14,7 @@ import {
   MockPricer,
   IStakeDao,
   ICurve,
+  MockStakedao,
 } from "../../typechain";
 import * as fs from "fs";
 import { getOrder } from "../utils/orders";
@@ -59,6 +60,7 @@ describe("Mainnet Fork Tests", function () {
   let otokenFactory: IOtokenFactory;
   let sdFrax3CrvPricer: StakedaoPricer;
   let wethPricer: MockPricer;
+  let mockSdfrax3crv: MockStakedao;
   let oracle: IOracle;
   let stakedaoSdfrax3crvStrategy: IStakeDao;
   let curvePool: ICurve;
@@ -139,6 +141,10 @@ describe("Mainnet Fork Tests", function () {
       "IStakeDao",
       sdFrax3CrvAddress
     )) as IStakeDao;
+    mockSdfrax3crv = (await ethers.getContractAt(
+      "MockStakedao",
+      sdFrax3CrvAddress
+    )) as MockStakedao;
     curvePool = (await ethers.getContractAt(
       "ICurve",
       curvePoolAddress
@@ -149,7 +155,7 @@ describe("Mainnet Fork Tests", function () {
     const VaultContract = await ethers.getContractFactory("OpynPerpVault");
     vault = (await VaultContract.deploy(
       usdc.address,
-      sdFrax3CrvAddress,
+      mockSdfrax3crv.address,
       curvePoolAddress,
       feeRecipient.address,
       "OpynPerpPPNVault share",
@@ -162,7 +168,7 @@ describe("Mainnet Fork Tests", function () {
     );
     action1 = (await BuyOTokenActionContract.deploy(
       vault.address,
-      sdFrax3CrvAddress,
+      mockSdfrax3crv.address,
       swapAddress,
       whitelistAddress,
       controllerAddress,
@@ -224,10 +230,15 @@ describe("Mainnet Fork Tests", function () {
     });
     await provider.send("hardhat_impersonateAccount", [opynOwner]);
     const signer = await ethers.provider.getSigner(opynOwner);
-    await whitelist.connect(signer).whitelistCollateral(sdFrax3CrvAddress);
+    await whitelist.connect(signer).whitelistCollateral(mockSdfrax3crv.address);
     await whitelist
       .connect(signer)
-      .whitelistProduct(weth.address, usdc.address, sdFrax3CrvAddress, true);
+      .whitelistProduct(
+        weth.address,
+        usdc.address,
+        mockSdfrax3crv.address,
+        true
+      );
     await provider.send("evm_mine", []);
     await provider.send("hardhat_stopImpersonatingAccount", [opynOwner]);
   });
@@ -333,7 +344,9 @@ describe("Mainnet Fork Tests", function () {
         .depositUnderlying(amountUsdcDeposited, 0, 2);
 
       const vaultTotal = await vault.totalStakedaoAsset();
-      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+      const vaultSdfrax3crvBalance = await mockSdfrax3crv.balanceOf(
+        vault.address
+      );
       const totalSharesMinted = vaultSdfrax3crvBalance;
 
       // check the deposit went through (fuzzily due to slippage and exchange rate)
@@ -370,7 +383,9 @@ describe("Mainnet Fork Tests", function () {
         .depositUnderlying(amountUsdcDeposited, 0, 2);
 
       const vaultTotal = await vault.totalStakedaoAsset();
-      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+      const vaultSdfrax3crvBalance = await mockSdfrax3crv.balanceOf(
+        vault.address
+      );
       const totalSharesMinted = vaultTotal.sub(vaultTotalBefore);
 
       // check the deposit went through (fuzzily due to slippage and exchange rate)
@@ -391,14 +406,14 @@ describe("Mainnet Fork Tests", function () {
       ).to.be.equal(totalSharesMinted);
     });
 
-    it("tests getPrice in sdFrax3CrvPricer", async () => {
-      await wethPricer.setPrice("400000000000"); // $4000
-      const usdcPrice = await oracle.getPrice(usdc.address);
-      const sdFrax3CrvPrice = await oracle.getPrice(sdFrax3Crv.address);
-      expect(usdcPrice.toNumber()).to.be.lessThanOrEqual(
-        sdFrax3CrvPrice.toNumber()
-      );
-    });
+    // it("tests getPrice in sdFrax3CrvPricer", async () => {
+    //   await wethPricer.setPrice("400000000000"); // $4000
+    //   const usdcPrice = await oracle.getPrice(usdc.address);
+    //   const sdFrax3CrvPrice = await oracle.getPrice(sdFrax3Crv.address);
+    //   expect(usdcPrice.toNumber()).to.be.lessThanOrEqual(
+    //     sdFrax3CrvPrice.toNumber()
+    //   );
+    // });
 
     it("owner commits to the option", async () => {
       expect(await action1.state()).to.be.equal(ActionState.Idle);
@@ -409,15 +424,18 @@ describe("Mainnet Fork Tests", function () {
     it("owner buys options with usdc", async () => {
       const exchangeRateBefore = await action1.getCurrentExchangeRate();
 
-      // increase time
-      const minPeriod = await action1.MIN_COMMIT_PERIOD();
-      await provider.send("evm_increaseTime", [minPeriod.toNumber()]); // increase time
-      await provider.send("evm_mine", []);
+      // change exchange rate to simulate passing time
+      const currentPricePerFullShare = mockSdfrax3crv.getPricePerFullShare();
+      mockSdfrax3crv.setPricePerFullShare(
+        (await currentPricePerFullShare).mul(1.5)
+      );
 
       await vault.rollOver([(100 - reserveFactor) * 100]);
 
       // get current vault sdFrax3Crv balance
-      const vaultSdfrax3crvBalance = await sdFrax3Crv.balanceOf(vault.address);
+      const vaultSdfrax3crvBalance = await mockSdfrax3crv.balanceOf(
+        vault.address
+      );
 
       const exchangeRateAfter = await action1.getCurrentExchangeRate();
 
@@ -433,7 +451,7 @@ describe("Mainnet Fork Tests", function () {
       // const expectedSdfrax3crvBalanceInVault = vaultSdfrax3crvBalanceBefore
       //   .mul(reserveFactor)
       //   .div(100);
-      const collateralAmount = await sdFrax3Crv.balanceOf(action1.address);
+      const collateralAmount = await mockSdfrax3crv.balanceOf(action1.address);
       //   // This assumes premium was paid in frax3crv. This is the lower bount
       //   const premiumInfrax3crv = premium
       //     .div(await frax3crv.get_virtual_price())
@@ -447,9 +465,8 @@ describe("Mainnet Fork Tests", function () {
       //     .sub(expectedSdfrax3crvBalanceInVault)
       //     .add(premiumInSdfrax3crv);
 
-      const marginPoolBalanceOfsdFrax3CrvBefore = await sdFrax3Crv.balanceOf(
-        marginPoolAddess
-      );
+      const marginPoolBalanceOfsdFrax3CrvBefore =
+        await mockSdfrax3crv.balanceOf(marginPoolAddess);
 
       const premiumToSend = premium.div(1000000000000);
 
@@ -496,7 +513,7 @@ describe("Mainnet Fork Tests", function () {
         "incorrect otoken balance obtained"
       ).to.be.equal(yieldAmount);
 
-      const marginPoolBalanceOfsdFrax3CrvAfter = await sdFrax3Crv.balanceOf(
+      const marginPoolBalanceOfsdFrax3CrvAfter = await mockSdfrax3crv.balanceOf(
         marginPoolAddess
       );
 
