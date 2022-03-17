@@ -99,7 +99,6 @@ contract RollOverBase is Ownable {
 
     function _checkOToken(address _nextOToken) private view {
         require(opynWhitelist.isWhitelistedOtoken(_nextOToken), "R5");
-        _customOTokenCheck(_nextOToken);
     }
 
     /**
